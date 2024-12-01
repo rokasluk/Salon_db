@@ -1,54 +1,84 @@
 #! /bin/bash
 
-PSQL="psql -X --username=freecodecamp --dbname=salon --tuples-only -c"
+# initialization, define function
+PSQL="psql --username=freecodecamp --dbname=salon --tuples-only -c"
 
-MAIN_MENU (){
-  if [[ $1 ]]
-  then
+MAIN_MENU () {
+  # Print 1st argument if given
+  if [[ $1 ]]; then
     echo -e "\n$1"
   fi
-
-  echo -e "\n~~~~~ MY SALON ~~~~~\n"
-  echo -e "Welcome to My Salon, how can I help you?\n"
-  SERVICES=$($PSQL "SELECT service_id, name from services order by service_id")
-  echo "$SERVICES" | while read SERVICE_ID BAR NAME
+  # Show services list
+  SERVICES_LIST=$($PSQL "SELECT service_id, name FROM services ORDER BY service_id;")
+  echo "$SERVICES_LIST" | while read SID BAR SERVICE_NAME
   do
-    echo "$SERVICE_ID) $NAME"
+    echo "$SID) $SERVICE_NAME"
   done
-  read SERVICE_ID
 
-  #Get service
-  SERVICE_ID_SELECTED=$($PSQL "SELECT service_id from services where service_id = $SERVICE_ID")
+  # go to select_service
+  SELECT_SERVICE
+}
 
-  # if input is not one of the selections
-  if [[ -z $SERVICE_ID_SELECTED ]]
-  then
-    # send to main menu
+SELECT_SERVICE () {
+  # get service id from user
+  read SERVICE_ID_SELECTED
+
+  # check if service_id_selected is valid
+  if [[ ! $SERVICE_ID_SELECTED =~ ^[0-9]+$ ]]; then
+    # if service_id_selected is not a number, then show list again
     MAIN_MENU "I could not find that service. What would you like today?"
-  else
-    #Ask for phone number
-    echo -e "\nWhat's your phone number?"
-    read CUSTOMER_PHONE
-    #Check if record exists
-    CUSTOMER_ID=$($PSQL "SELECT customer_id from customers where phone = '$CUSTOMER_PHONE'")
-    #if customer_name doesn't exist
-    if [[ -z $CUSTOMER_ID ]]
-    then
-    #get new customer name
-      echo -e "\nI don't have a record for that phone number, what's your name?"
-      read CUSTOMER_NAME
-    #Insert name
-      INSERT_NAME_RESULT=$($PSQL "INSERT INTO customers(name, phone) values('$CUSTOMER_NAME', '$CUSTOMER_PHONE')")
-      #Pull customer_id
-      CUSTOMER_ID=$($PSQL "SELECT customer_id from customers where phone = '$CUSTOMER_PHONE'")
+  else  
+    # check if service_id_selected exist
+    SERVICE_NAME=$($PSQL "SELECT name FROM services WHERE service_id='$SERVICE_ID_SELECTED'" | sed -E 's/^ //g')
+    # echo "$SERVICE_NAME"
+
+    if [[ -z $SERVICE_NAME ]]; then
+      # if service_id_selected is a number but outside of list, then show list again
+      MAIN_MENU "I could not find that service. What would you like today?"
+    else :
+      # break from loop
     fi
-    CUSTOMER_NAME=$($PSQL "SELECT name from customers where customer_id = '$CUSTOMER_ID'")
-    #Ask for the time of the service
-    echo -e "\nWhat time would you like your cut,$CUSTOMER_NAME?"
-    read SERVICE_TIME
-    INSERT_APPOINTMENT_RESULT=$($PSQL "INSERT INTO appointments(customer_id, service_id, time) VALUES('$CUSTOMER_ID', $SERVICE_ID_SELECTED, '$SERVICE_TIME')")
-    SERVICE_NAME=$($PSQL "SELECT name from services where service_id = $SERVICE_ID_SELECTED")
-    echo -e "\nI have put you down for a$SERVICE_NAME at $SERVICE_TIME,$CUSTOMER_NAME.\n"
   fi
 }
+
+INSERT_NEW_CUSTOMER () {
+  # query to insert
+  INSERT_CUST_RESULT=$($PSQL "INSERT INTO customers(phone, name) VALUES('$CUSTOMER_PHONE', '$CUSTOMER_NAME')")
+}
+
+CREATE_APPOINTMENT () {
+  # get customer_id
+  CUSTOMER_ID=$($PSQL "SELECT customer_id FROM customers WHERE phone='$CUSTOMER_PHONE'" | sed -E 's/^ +| +$//g')
+  
+  # insert to appointments table
+  INSERT_APT_RESULT=$($PSQL "INSERT INTO appointments(customer_id, service_id, time) VALUES($CUSTOMER_ID, $SERVICE_ID_SELECTED, '$SERVICE_TIME')")
+
+  # print message
+  echo -e "\nI have put you down for a $SERVICE_NAME at $SERVICE_TIME, $CUSTOMER_NAME.\n"
+}
+
+# ------------------- Main Program Starts Here
+echo -e "\n~~~~~ MY SALON ~~~~~\n"
+echo -e "Welcome to My Salon, how can I help you?\n"
 MAIN_MENU
+
+# get customer's phone
+echo -e "\nWhat's your phone number?"
+read CUSTOMER_PHONE
+
+# query for customer name by phone
+CUSTOMER_NAME=$($PSQL "SELECT name FROM customers WHERE phone='$CUSTOMER_PHONE'" | sed -E 's/^ +| +$//g')
+
+if [[ -z $CUSTOMER_NAME ]]; then
+  # if not exist in customers table, then ask for new customer name
+  echo -e "\nI don't have a record for that phone number, what's your name?"
+  read CUSTOMER_NAME
+
+  INSERT_NEW_CUSTOMER
+fi
+
+# ask for service time
+echo -e "\nWhat time would you like your $SERVICE_NAME, $CUSTOMER_NAME?"
+read SERVICE_TIME
+
+CREATE_APPOINTMENT
